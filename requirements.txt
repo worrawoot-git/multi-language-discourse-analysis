@@ -1,0 +1,9 @@
+streamlit
+pythainlp
+wordcloud
+matplotlib
+pandas
+python-docx
+networkx
+openpyxl
+langdetect
