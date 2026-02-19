@@ -10,27 +10,34 @@ from docx import Document
 import networkx as nx 
 from langdetect import detect
 import nltk
-from nltk.corpus import cmudict # สำหรับนับพยางค์ภาษาอังกฤษ
 
-# ดาวน์โหลดข้อมูลที่จำเป็นสำหรับ NLTK
-try:
-    nltk.data.find('corpora/cmudict')
-except LookupError:
-    nltk.download('cmudict')
-    nltk.download('averaged_perceptron_tagger')
-    nltk.download('universal_tagset')
+# --- 1. ดาวน์โหลด NLTK Resources (แก้ไขปัญหา LookupError) ---
+@st.cache_resource
+def init_nltk():
+    resources = [
+        'cmudict', 
+        'averaged_perceptron_tagger', 
+        'averaged_perceptron_tagger_eng',
+        'universal_tagset',
+        'punkt',
+        'punkt_tab'
+    ]
+    for res in resources:
+        nltk.download(res, quiet=True)
+    try:
+        return nltk.corpus.cmudict.dict()
+    except:
+        return {}
 
-d = cmudict.dict()
+cmu_dict = init_nltk()
 
-# --- ฟังก์ชันนับพยางค์ภาษาอังกฤษ ---
+# --- 2. ฟังก์ชันนับพยางค์ ---
 def count_syllables_en(word):
     word = word.lower()
-    if word in d:
-        return max([len([list(y for y in x if y[-1].isdigit()) for x in d[word]][0])])
-    # กรณีไม่พบในดิกชันนารี ใช้การนับสระพื้นฐาน
+    if word in cmu_dict:
+        return max([len([list(y for y in x if y[-1].isdigit()) for x in cmu_dict[word]][0])])
     return len(re.findall(r'[aeiouy]+', word))
 
-# --- ฟังก์ชันนับพยางค์ภาษาไทย ---
 def count_syllables_th(word):
     try:
         from pythainlp.tokenize import syllable_tokenize
@@ -38,7 +45,7 @@ def count_syllables_th(word):
     except:
         return 0
 
-# --- 1. ตั้งค่าการแสดงผลภาษาไทย ---
+# --- 3. ตั้งค่าฟอนต์และการแสดงผล ---
 font_path = "Kanit-Regular.ttf" 
 
 def setup_font():
@@ -51,27 +58,13 @@ def setup_font():
     except:
         return None
 
-# --- 2. ฟังก์ชันช่วยสร้างไฟล์ Export ---
 def to_excel(df):
     output = BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
-        df.to_excel(writer, index=False, sheet_name='Summary')
+        df.to_excel(writer, index=False, sheet_name='Analysis')
     return output.getvalue()
 
-# --- 3. ฟังก์ชันวิเคราะห์อารมณ์ ---
-def analyze_sentiment(text, lang):
-    if lang == 'th':
-        pos = ['ดี', 'สำเร็จ', 'ภูมิใจ', 'ความสุข', 'พัฒนา', 'ประโยชน์', 'ยั่งยืน', 'พอเพียง']
-        neg = ['ไม่ดี', 'ปัญหา', 'แย่', 'ยากลำบาก', 'ขาดแคลน', 'อุปสรรค', 'หนี้สิน']
-    else:
-        pos = ['good', 'great', 'excellent', 'success', 'happy', 'positive', 'improve', 'benefit']
-        neg = ['bad', 'problem', 'difficult', 'lack', 'obstacle', 'debt', 'negative', 'poor']
-    
-    pos_score = sum(1 for w in pos if w in text.lower())
-    neg_score = sum(1 for w in neg if w in text.lower())
-    return "บวก 😊" if pos_score > neg_score else ("ลบ 😟" if neg_score > pos_score else "ปกติ 😐")
-
-# --- เริ่มต้นโปรแกรม ---
+# --- 4. ฟังก์ชันหลักในการวิเคราะห์ ---
 try:
     from pythainlp.tokenize import word_tokenize
     from pythainlp.corpus import thai_stopwords
@@ -80,11 +73,11 @@ try:
 except:
     THAI_READY = False
 
-st.set_page_config(layout="wide", page_title="Syllable Filter Research Tool")
-st.title("🕸️ ระบบวิเคราะห์งานวิจัย (กรองคำ 5-10 พยางค์)")
+st.set_page_config(layout="wide", page_title="Ultimate Research Tool")
+st.title("🔬 ระบบวิเคราะห์งานวิจัยขั้นสูง (Syllable Filter 5-10)")
 
 if not THAI_READY:
-    st.error("❌ Library ไม่พร้อมใช้งาน")
+    st.error("❌ Library พื้นฐานไม่พร้อมใช้งาน")
     st.stop()
 
 font_p = setup_font()
@@ -96,49 +89,73 @@ if uploaded_files:
         try: lang = detect(raw_text)
         except: lang = 'th'
         
-        # --- ระบบกรองคำตามเงื่อนไขใหม่ ---
+        # --- ระบบกรองคำ (Filter Logic) ---
+        filtered_list = []
         if lang == 'th':
             tokens = word_tokenize(raw_text, keep_whitespace=False)
-            stop_words = list(thai_stopwords())
-            filtered = []
+            stop_words = list(thai_stopwords()) + ['เนาะ', 'นะ', 'ครับ', 'ค่ะ', 'คือ', 'แบบ']
             for t in tokens:
                 t = t.strip()
-                # ตัดสัญลักษณ์/ตัวเลข และคำที่สั้นเกินไป
                 if t and not re.match(r'^[0-9\W]+$', t) and t not in stop_words:
-                    syl_count = count_syllables_th(t)
-                    if 5 <= syl_count <= 10: # กรองพยางค์ 5-10
-                        filtered.append(t)
+                    s_count = count_syllables_th(t)
+                    if 5 <= s_count <= 10:
+                        filtered_list.append(t)
         else:
-            # ภาษาอังกฤษ: ตัด Preposition, Article, Conjunction, Number
-            import nltk
-            words_only = re.findall(r'\b[a-zA-Z]+\b', raw_text.lower())
+            # ภาษาอังกฤษ: ใช้ POS Tagging กรอง Preposition, Article, etc.
+            words_only = re.findall(r'\b[a-zA-Z]{3,}\b', raw_text.lower())
             tagged = nltk.pos_tag(words_only)
-            # ตัดบทความ (DT), คำเชื่อม (CC), บุพบท (IN)
-            excluded_tags = ['DT', 'CC', 'IN', 'PRP', 'PRP$', 'TO', 'MD']
-            filtered = []
+            # ตัดบทความ (DT), คำเชื่อม (CC), บุพบท (IN), คำสรรพนาม (PRP)
+            excluded = ['DT', 'CC', 'IN', 'PRP', 'PRP$', 'TO', 'MD', 'CD']
             for word, tag in tagged:
-                if tag not in excluded_tags and len(word) > 2:
-                    syl_count = count_syllables_en(word)
-                    if 5 <= syl_count <= 10: # กรองพยางค์ 5-10
-                        filtered.append(word)
+                if tag not in excluded:
+                    s_count = count_syllables_en(word)
+                    if 5 <= s_count <= 10:
+                        filtered_list.append(word)
 
-        word_counts = Counter(filtered)
-        filtered_final = [w for w in filtered if word_counts[w] >= 1] # ปรับให้โชว์แม้เจอแค่ครั้งเดียว
-
-        with st.expander(f"📑 ผลการวิเคราะห์: {file.name} ({'ไทย' if lang=='th' else 'EN'})", expanded=True):
-            if not filtered_final:
-                st.warning("⚠️ ไม่พบคำที่มีความยาว 5-10 พยางค์ในไฟล์นี้")
+        word_counts = Counter(filtered_list)
+        
+        with st.expander(f"📊 ผลการวิเคราะห์: {file.name} ({'ไทย' if lang=='th' else 'EN'})", expanded=True):
+            if not filtered_list:
+                st.warning("🔍 ไม่พบคำที่มีความยาว 5-10 พยางค์ตามเงื่อนไข")
             else:
-                c1, c2 = st.columns(2)
-                with c1:
-                    st.write(f"**จำนวนคำที่ผ่านการกรอง:** {len(filtered_final)} คำ")
-                    wc = WordCloud(width=800, height=400, background_color="white", font_path=font_path).generate(" ".join(filtered_final))
+                col1, col2 = st.columns([2, 1])
+                with col1:
+                    st.subheader("☁️ Word Cloud (5-10 Syllables)")
+                    wc = WordCloud(width=800, height=450, background_color="white", font_path=font_path).generate(" ".join(filtered_list))
                     fig, ax = plt.subplots()
-                    ax.imshow(wc)
+                    ax.imshow(wc, interpolation='bilinear')
                     ax.axis("off")
                     st.pyplot(fig)
-                with c2:
-                    st.subheader("📈 สถิติคำ (5-10 พยางค์)")
-                    df_counts = pd.DataFrame(word_counts.most_common(15), columns=['คำ', 'จำนวนครั้ง'])
-                    st.table(df_counts)
-                    st.download_button("🟢 โหลด Excel", to_excel(df_counts), f"filter_{file.name}.xlsx")
+                    
+                    buf_wc = BytesIO()
+                    fig.savefig(buf_wc, format="png")
+                    st.download_button("💾 ดาวน์โหลดรูปภาพ (PNG)", buf_wc.getvalue(), f"cloud_{file.name}.png", "image/png")
+
+                with col2:
+                    st.subheader("📈 สถิติคำสำคัญ")
+                    df_stats = pd.DataFrame(word_counts.most_common(20), columns=['คำ', 'จำนวนครั้ง'])
+                    st.table(df_stats)
+                    st.download_button("🟢 ดาวน์โหลดข้อมูล (Excel)", to_excel(df_stats), f"stats_{file.name}.xlsx")
+                
+                # --- Network Analysis สำหรับคำกรอง ---
+                st.divider()
+                st.subheader("🕸️ โครงข่ายความสัมพันธ์ของคำยาว")
+                G = nx.Graph()
+                pairs = [tuple(sorted((filtered_list[i], filtered_list[i+1]))) for i in range(len(filtered_list)-1)]
+                for p, w in Counter(pairs).most_common(15):
+                    G.add_edge(p[0], p[1], weight=w)
+                
+                if len(G.nodes) > 0:
+                    fig_net, ax_net = plt.subplots(figsize=(10, 6))
+                    pos = nx.spring_layout(G, k=0.6)
+                    nx.draw_networkx_edges(G, pos, edge_color='gray', alpha=0.3)
+                    nx.draw_networkx_nodes(G, pos, node_color='orange', node_size=1500)
+                    for node, (x, y) in pos.items():
+                        ax_net.text(x, y, node, fontproperties=font_p, fontsize=10, ha='center', bbox=dict(facecolor='white', alpha=0.7, edgecolor='none'))
+                    plt.axis('off')
+                    st.pyplot(fig_net)
+                else:
+                    st.info("ข้อมูลไม่พอสำหรับสร้างโครงข่าย")
+
+else:
+    st.info("💡 คำแนะนำ: ระบบจะแสดงเฉพาะคำวิชาการหรือคำเฉพาะที่มีความยาว **5-10 พยางค์** เท่านั้น (เช่น 'กตัญญูกตเวที' หรือ 'Sustainability')")
