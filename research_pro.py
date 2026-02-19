@@ -11,7 +11,7 @@ import networkx as nx
 from langdetect import detect
 import nltk
 
-# --- 1. ดาวน์โหลด NLTK Resources ---
+# --- 1. NLTK Resource Initialization ---
 @st.cache_resource
 def init_nltk():
     resources = ['cmudict', 'averaged_perceptron_tagger', 'averaged_perceptron_tagger_eng', 'universal_tagset', 'punkt', 'punkt_tab']
@@ -24,7 +24,7 @@ def init_nltk():
 
 cmu_dict = init_nltk()
 
-# --- 2. ฟังก์ชันนับพยางค์ ---
+# --- 2. Syllable Counting Functions ---
 def count_syllables_en(word):
     word = word.lower()
     if word in cmu_dict:
@@ -38,7 +38,7 @@ def count_syllables_th(word):
     except:
         return 0
 
-# --- 3. ฟังก์ชัน Sentiment Analysis (Dual Language) ---
+# --- 3. Sentiment Analysis Function (Dual Language) ---
 def analyze_sentiment(text, lang):
     if lang == 'th':
         pos = ['ดี', 'สำเร็จ', 'ภูมิใจ', 'ความสุข', 'พัฒนา', 'ประโยชน์', 'ยั่งยืน', 'พอเพียง', 'สะดวก']
@@ -51,11 +51,11 @@ def analyze_sentiment(text, lang):
     pos_score = sum(1 for w in pos if w in low_text)
     neg_score = sum(1 for w in neg if w in low_text)
     
-    if pos_score > neg_score: return "บวก (Positive) 😊"
-    elif neg_score > pos_score: return "ลบ (Negative) 😟"
-    else: return "ปกติ / เป็นกลาง 😐"
+    if pos_score > neg_score: return "Positive 😊"
+    elif neg_score > pos_score: return "Negative 😟"
+    else: return "Neutral 😐"
 
-# --- 4. ตั้งค่าฟอนต์และการ Export ---
+# --- 4. Font & Export Settings ---
 font_path = "Kanit-Regular.ttf" 
 
 def setup_font():
@@ -74,7 +74,7 @@ def to_excel(df):
         df.to_excel(writer, index=False, sheet_name='Analysis')
     return output.getvalue()
 
-# --- 5. การนำเข้า Library และ UI ---
+# --- 5. Main UI & Processing ---
 try:
     from pythainlp.tokenize import word_tokenize
     from pythainlp.corpus import thai_stopwords
@@ -82,15 +82,16 @@ try:
 except:
     THAI_READY = False
 
-st.set_page_config(layout="wide", page_title="Ultimate Research Tool Pro")
-st.title("🔬 ระบบวิเคราะห์งานวิจัยขั้นสูง (Syllable 5-10 & Sentiment)")
+st.set_page_config(layout="wide", page_title="Advanced Research Analysis Tool")
+st.title("🔬 Advanced Research Analysis Tool")
+st.subheader("Syllable Filter (5-10) & Sentiment Analysis")
 
 if not THAI_READY:
-    st.error("❌ Library ไม่พร้อมใช้งาน")
+    st.error("❌ Required libraries not found. Please check requirements.txt")
     st.stop()
 
 font_p = setup_font()
-uploaded_files = st.file_uploader("อัปโหลดไฟล์ (.txt)", type=['txt'], accept_multiple_files=True)
+uploaded_files = st.file_uploader("Upload Interview/Document Files (.txt)", type=['txt'], accept_multiple_files=True)
 
 if uploaded_files:
     summary_for_all = []
@@ -99,7 +100,7 @@ if uploaded_files:
         try: lang = detect(raw_text)
         except: lang = 'th'
         
-        # --- กรองคำ (Filter Logic) ---
+        # --- Filter Logic ---
         filtered_list = []
         if lang == 'th':
             tokens = word_tokenize(raw_text, keep_whitespace=False)
@@ -120,17 +121,21 @@ if uploaded_files:
 
         word_counts = Counter(filtered_list)
         sentiment_result = analyze_sentiment(raw_text, lang)
-        summary_for_all.append({"ไฟล์": file.name, "ภาษา": "ไทย" if lang=='th' else "EN", "ความรู้สึก": sentiment_result})
+        summary_for_all.append({
+            "Filename": file.name, 
+            "Language": "Thai" if lang=='th' else "English", 
+            "Sentiment": sentiment_result
+        })
 
-        with st.expander(f"📊 ผลการวิเคราะห์: {file.name}", expanded=True):
+        with st.expander(f"📊 Analysis Result: {file.name}", expanded=True):
             if not filtered_list:
-                st.warning("🔍 ไม่พบคำที่มีความยาว 5-10 พยางค์")
-                st.write(f"**วิเคราะห์ความรู้สึก:** {sentiment_result}")
+                st.warning("🔍 No words found with 5-10 syllables.")
+                st.write(f"**Sentiment Analysis:** {sentiment_result}")
             else:
                 col1, col2 = st.columns([2, 1])
                 with col1:
-                    st.subheader("💡 การวิเคราะห์เนื้อหา")
-                    st.write(f"**ความรู้สึกของข้อความ:** {sentiment_result}")
+                    st.subheader("💡 Content Insights")
+                    st.write(f"**Overall Sentiment:** {sentiment_result}")
                     
                     wc = WordCloud(width=800, height=450, background_color="white", font_path=font_path).generate(" ".join(filtered_list))
                     fig_wc, ax_wc = plt.subplots()
@@ -140,17 +145,17 @@ if uploaded_files:
                     
                     buf_wc = BytesIO()
                     fig_wc.savefig(buf_wc, format="png")
-                    st.download_button("💾 ดาวน์โหลด Word Cloud (PNG)", buf_wc.getvalue(), f"cloud_{file.name}.png", "image/png")
+                    st.download_button("💾 Download Word Cloud (PNG)", buf_wc.getvalue(), f"cloud_{file.name}.png", "image/png")
 
                 with col2:
-                    st.subheader("📈 สถิติคำสำคัญ (5-10 พยางค์)")
-                    df_stats = pd.DataFrame(word_counts.most_common(20), columns=['คำ', 'จำนวนครั้ง'])
+                    st.subheader("📈 Key Terms (5-10 Syllables)")
+                    df_stats = pd.DataFrame(word_counts.most_common(20), columns=['Term', 'Frequency'])
                     st.table(df_stats)
-                    st.download_button("🟢 ดาวน์โหลดข้อมูลสถิติ (Excel)", to_excel(df_stats), f"stats_{file.name}.xlsx")
+                    st.download_button("🟢 Download Statistics (Excel)", to_excel(df_stats), f"stats_{file.name}.xlsx")
                 
                 # --- Network Analysis ---
                 st.divider()
-                st.subheader("🕸️ โครงข่ายความสัมพันธ์ของคำยาว")
+                st.subheader("🕸️ Semantic Network (High-Syllable Words)")
                 G = nx.Graph()
                 pairs = [tuple(sorted((filtered_list[i], filtered_list[i+1]))) for i in range(len(filtered_list)-1)]
                 for p, w in Counter(pairs).most_common(15):
@@ -166,16 +171,15 @@ if uploaded_files:
                     plt.axis('off')
                     st.pyplot(fig_net)
                     
-                    # --- ปุ่มดาวน์โหลดรูป Network PNG เพิ่มให้แล้วครับ ---
                     buf_net = BytesIO()
                     fig_net.savefig(buf_net, format="png")
-                    st.download_button("💾 ดาวน์โหลดรูปโครงข่าย (PNG)", buf_net.getvalue(), f"network_{file.name}.png", "image/png")
+                    st.download_button("💾 Download Network (PNG)", buf_net.getvalue(), f"network_{file.name}.png", "image/png")
                 else:
-                    st.info("ข้อมูลไม่พอสำหรับสร้างโครงข่าย")
+                    st.info("Insufficient data for network visualization.")
 
-    # ตารางสรุปรวมท้ายหน้า
+    # Global Summary Table
     st.divider()
-    st.subheader("📋 ตารางสรุปภาพรวมทุกไฟล์")
+    st.subheader("📋 Overall Project Summary")
     st.table(pd.DataFrame(summary_for_all))
 else:
-    st.info("💡 ระบบนี้จะกรองเฉพาะคำที่มีความยาว **5-10 พยางค์** เท่านั้น เหมาะสำหรับการวิเคราะห์คำศัพท์วิชาการหรือคำเฉพาะทาง")
+    st.info("👋 Welcome! Please upload .txt files to start the advanced analysis. Note: This tool filters specifically for academic or complex terms (5-10 syllables).")
